@@ -22,7 +22,7 @@ def main(filename=None):
     # print('input:', filename)
 
     try:
-        result_dir = 'c:\\Users\\Admin\\Desktop\\DOJO\\dogs_vs_cats\\results'
+        result_dir = 'results'
         img_height, img_width = 150, 150
         channels = 3
 

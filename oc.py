@@ -2,13 +2,16 @@ import streamlit as st
 import time
 import os 
 from PIL import Image
-import dog_vs_cat.predict as predict
+import predict
 import shutil
 
 st.set_page_config(page_title="犬猫分類AI", layout="centered")
 st.write('# AIで画像を分類しよう！')
 
-keep_dir = 'c:\\Users\\Admin\\Desktop\\DOJO\\dogs_vs_cats\\keep'
+# keep_dir = 'dog_vs_cat\\dog_vs_cat\\keep'
+keep_dir = os.path.join(os.path.dirname(__file__), "keep")
+if not os.path.exists(keep_dir):
+    os.makedirs(keep_dir, exist_ok=True)
 
 # セッションステートの初期化
 if "result" not in st.session_state:
@@ -20,9 +23,7 @@ uploaded_file = st.file_uploader("画像を挿入してください", type=["png
 
 if uploaded_file:
     st.image(uploaded_file, caption="アップロードされた画像", width=500)
-
-    if not os.path.exists(keep_dir):
-        os.mkdir(keep_dir)
+    
 
     # 保存しておく
     img_path = os.path.join(keep_dir, uploaded_file.name)
