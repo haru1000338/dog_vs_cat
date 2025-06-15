@@ -290,3 +290,41 @@ st.markdown("""
 
 **注意**: Google検索が制限される場合があります。その際はサンプル画像をご利用ください。
 """)
+
+def save_images_to_temp(img_urls):
+    """画像URLリストを一時ディレクトリに保存"""
+    temp_dir = tempfile.mkdtemp()
+    saved_files = []
+
+    for i, url in enumerate(img_urls):
+        filename = os.path.join(temp_dir, f"image_{i}.jpg")
+        if download_image(url, filename):
+            saved_files.append(filename)
+
+    return temp_dir, saved_files
+
+# Streamlitアプリで画像選択と推論
+st.write("## Google画像検索から画像を選択")
+query = st.text_input("検索キーワードを入力してください", "犬")
+num_images = st.slider("取得する画像の枚数", 1, 20, 5)
+
+if st.button("画像を検索"):
+    with st.spinner("画像を検索中..."):
+        img_urls = search_google_images(query, num_images)
+        if img_urls:
+            temp_dir, saved_files = save_images_to_temp(img_urls)
+            st.success(f"{len(saved_files)} 枚の画像を取得しました")
+
+            # 画像を表示して選択
+            selected_image = st.selectbox("画像を選択してください", saved_files)
+            if selected_image:
+                st.image(selected_image, caption="選択された画像", use_column_width=True)
+
+                # 推論を実行
+                if st.button("推論を実行"):
+                    with st.spinner("推論中..."):
+                        result = predict.predict(selected_image)
+                        st.write(f"推論結果: {result}")
+
+            # 一時ディレクトリを削除
+            shutil.rmtree(temp_dir)
