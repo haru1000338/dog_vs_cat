@@ -68,16 +68,46 @@ def search_google_images(query, num_images=10):
                 if src and src not in img_urls and not src.startswith('data:image'):
                     img_urls.append(src)
                     if len(img_urls) >= num_images:
-                        break
-
-        # フィルタリング: 小さすぎる画像やアイコンを除外
+                        break        # フィルタリング: 小さすぎる画像やアイコンを除外
         filtered_urls = []
         for url in img_urls:
             # Googleのロゴやアイコンを除外
             if not any(skip in url.lower() for skip in ['logo', 'icon', 'button', 'avatar', 'gstatic']):
-                filtered_urls.append(url)
+                # 画像サイズをパラメータから推測（より大きな画像を優先）
+                if any(size in url for size in ['w=', 'width=', 's=']) or len(url) > 100:
+                    filtered_urls.append(url)
+                elif len(filtered_urls) < 3:  # 最低限の画像数を確保
+                    filtered_urls.append(url)
 
         st.write(f"フィルタリング後の画像数: {len(filtered_urls)}")
+
+        # URLをテストして実際にアクセス可能かチェック
+        if filtered_urls:
+            st.write("画像URLの有効性をチェック中...")
+            valid_urls = []
+            for i, url in enumerate(filtered_urls):
+                try:
+                    # HEADリクエストで画像の存在をチェック
+                    head_response = requests.head(url, headers=headers, timeout=5)
+                    if head_response.status_code == 200:
+                        content_type = head_response.headers.get('content-type', '')
+                        if content_type.startswith('image/'):
+                            valid_urls.append(url)
+                            st.write(f"✅ 画像 {i+1}: 有効")
+                        else:
+                            st.write(f"❌ 画像 {i+1}: 画像ファイルではありません ({content_type})")
+                    else:
+                        st.write(f"❌ 画像 {i+1}: アクセスできません (ステータス: {head_response.status_code})")
+                except Exception as e:
+                    st.write(f"❌ 画像 {i+1}: チェック失敗 ({str(e)[:30]}...)")
+                    # アクセスできない場合でも、リストに含める（表示時に再試行）
+                    valid_urls.append(url)
+
+                if len(valid_urls) >= num_images:
+                    break
+
+            st.write(f"有効な画像数: {len(valid_urls)}")
+            return valid_urls[:num_images]
 
         return filtered_urls[:num_images]
 
@@ -184,46 +214,39 @@ with col2:
         st.session_state.img_urls = get_sample_images()
         st.success(f"{len(st.session_state.img_urls)}枚のサンプル画像を読み込みました！")
 
-# サンプル画像セクション
-st.markdown("### 🌟 サンプル画像")
-sample_images = get_sample_images()
-st.write("犬と猫のサンプル画像を表示します。クリックで選択できます。")
-
-# 画像を3列で表示
-cols = st.columns(3)
-for i, url in enumerate(sample_images):
-    col = cols[i % 3]
-    with col:
-        try:
-            st.image(url, width=200)
-            if st.button(f"この画像を選択", key=f"sample_select_{i}"):
-                # 選択された画像をダウンロード
-                img_filename = f"sample_image_{i}.jpg"
-                img_path = os.path.join(keep_dir, img_filename)
-
-                with st.spinner("画像をダウンロード中..."):
-                    if download_image(url, img_path):
-                        st.session_state.selected_image_url = url
-                        st.session_state.selected_image_path = img_path
-                        st.session_state.result = None
-                        st.session_state.prob = None
-                        st.session_state.predicted = False
-                        st.success("✅ 画像が選択されました！")
-                        st.rerun()
-        except Exception as e:
-            st.error(f"画像の処理でエラーが発生しました: {e}")
-
-# 検索結果の表示
+# 検索結果の表示（検索結果とサンプル画像の両方を統合表示）
 if hasattr(st.session_state, 'img_urls') and st.session_state.img_urls:
     st.markdown("### 📸 検索結果から画像を選択")
 
+    # デバッグ情報: 取得されたURLを表示
+    if st.checkbox("🔍 デバッグ情報を表示", key="debug_urls"):
+        st.write("取得された画像URL:")
+        for i, url in enumerate(st.session_state.img_urls):
+            st.write(f"{i+1}: {url}")
+
     # 画像を3列で表示
     cols = st.columns(3)
+    displayed_count = 0
+
     for i, url in enumerate(st.session_state.img_urls):
-        col = cols[i % 3]
+        col = cols[displayed_count % 3]
         with col:
             try:
-                st.image(url, width=200)
+                # URLの妥当性を事前チェック
+                if not url or not url.startswith('http'):
+                    continue
+
+                # 画像を表示（エラーハンドリング付き）
+                try:
+                    st.image(url, width=200, caption=f"画像 {i+1}")
+                    image_displayed = True
+                except Exception as img_error:
+                    # 画像表示に失敗した場合、プレースホルダーを表示
+                    st.error(f"画像 {i+1} の表示に失敗: {str(img_error)[:50]}...")
+                    st.write(f"URL: {url[:50]}...")
+                    image_displayed = False
+
+                # 選択ボタンは画像表示の成否に関係なく表示
                 if st.button(f"この画像を選択", key=f"select_{i}"):
                     # 選択された画像をダウンロード
                     img_filename = f"selected_image_{i}.jpg"
@@ -238,8 +261,16 @@ if hasattr(st.session_state, 'img_urls') and st.session_state.img_urls:
                             st.session_state.predicted = False
                             st.success("✅ 画像が選択されました！")
                             st.rerun()
+                        else:
+                            st.error("この画像のダウンロードに失敗しました。別の画像を試してください。")
+
+                displayed_count += 1
+
             except Exception as e:
-                st.error(f"画像の処理でエラーが発生しました: {e}")
+                st.error(f"画像 {i+1} の処理でエラーが発生しました: {e}")
+
+    if displayed_count == 0:
+        st.warning("表示可能な画像が見つかりませんでした。サンプル画像をお試しください。")
 
 # 選択された画像の表示と予測
 if st.session_state.selected_image_path and os.path.exists(st.session_state.selected_image_path):
