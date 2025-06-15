@@ -17,104 +17,23 @@ if not os.path.exists(keep_dir):
     os.makedirs(keep_dir, exist_ok=True)
 
 def search_google_images(query, num_images=10):
-    """Google画像検索の結果を取得する（改善版）"""
-    search_url = f"https://www.google.com/search?q={query}&tbm=isch&safe=off"
+    """Google画像検索の結果をスクレイピングで取得する（簡略化版）"""
+    search_url = f"https://www.google.com/search?q={query}&tbm=isch"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
 
     try:
-        response = requests.get(search_url, headers=headers, timeout=10)
+        response = requests.get(search_url, headers=headers)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # デバッグ情報を表示
-        st.write(f"検索URL: {search_url}")
-        st.write(f"レスポンスステータス: {response.status_code}")
-
-        # 複数の方法で画像URLを探索
-        img_urls = []
-
-        # 方法1: imgタグのsrc属性から
+        # 画像URLを抽出
         img_tags = soup.find_all('img')
-        st.write(f"見つかったimgタグ数: {len(img_tags)}")
+        img_urls = [img.get('src') for img in img_tags if img.get('src') and img.get('src').startswith('http')]
 
-        for img in img_tags:
-            src = img.get('src')
-            data_src = img.get('data-src')
-
-            # srcまたはdata-srcから有効なURLを取得
-            for url in [src, data_src]:
-                if url and (url.startswith('http') or url.startswith('data:image')):
-                    # data:image URLは除外（Base64エンコードされた画像）
-                    if not url.startswith('data:image') and url not in img_urls:
-                        img_urls.append(url)
-                        if len(img_urls) >= num_images:
-                            break
-
-            if len(img_urls) >= num_images:
-                break
-
-        # 方法2: より具体的なセレクタを使用
-        if len(img_urls) < 3:
-            specific_imgs = soup.select('img[src*="http"]')
-            for img in specific_imgs:
-                src = img.get('src')
-                if src and src not in img_urls and not src.startswith('data:image'):
-                    img_urls.append(src)
-                    if len(img_urls) >= num_images:
-                        break        # フィルタリング: 小さすぎる画像やアイコンを除外
-        filtered_urls = []
-        for url in img_urls:
-            # Googleのロゴやアイコンを除外
-            if not any(skip in url.lower() for skip in ['logo', 'icon', 'button', 'avatar', 'gstatic']):
-                # 画像サイズをパラメータから推測（より大きな画像を優先）
-                if any(size in url for size in ['w=', 'width=', 's=']) or len(url) > 100:
-                    filtered_urls.append(url)
-                elif len(filtered_urls) < 3:  # 最低限の画像数を確保
-                    filtered_urls.append(url)
-
-        st.write(f"フィルタリング後の画像数: {len(filtered_urls)}")
-
-        # URLをテストして実際にアクセス可能かチェック
-        if filtered_urls:
-            st.write("画像URLの有効性をチェック中...")
-            valid_urls = []
-            for i, url in enumerate(filtered_urls):
-                try:
-                    # HEADリクエストで画像の存在をチェック
-                    head_response = requests.head(url, headers=headers, timeout=5)
-                    if head_response.status_code == 200:
-                        content_type = head_response.headers.get('content-type', '')
-                        if content_type.startswith('image/'):
-                            valid_urls.append(url)
-                            st.write(f"✅ 画像 {i+1}: 有効")
-                        else:
-                            st.write(f"❌ 画像 {i+1}: 画像ファイルではありません ({content_type})")
-                    else:
-                        st.write(f"❌ 画像 {i+1}: アクセスできません (ステータス: {head_response.status_code})")
-                except Exception as e:
-                    st.write(f"❌ 画像 {i+1}: チェック失敗 ({str(e)[:30]}...)")
-                    # アクセスできない場合でも、リストに含める（表示時に再試行）
-                    valid_urls.append(url)
-
-                if len(valid_urls) >= num_images:
-                    break
-
-            st.write(f"有効な画像数: {len(valid_urls)}")
-            return valid_urls[:num_images]
-
-        return filtered_urls[:num_images]
-
-    except requests.RequestException as e:
-        st.error(f"ネットワークエラー: {e}")
-        return []
-    except Exception as e:
+        return img_urls[:num_images]
+    except requests.exceptions.RequestException as e:
         st.error(f"画像検索でエラーが発生しました: {e}")
         return []
 

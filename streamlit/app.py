@@ -6,13 +6,14 @@ import sys
 import tempfile
 from PIL import Image
 import io
+from googleapiclient.discovery import build
 
 # predict.pyの関数をインポート
 sys.path.append('..')
 from predict import main as predict_image
 
 def search_google_images(query, num_images=10):
-    """Google画像検索の結果を取得する"""
+    """Google画像検索の結果をスクレイピングで取得する（簡略化版）"""
     search_url = f"https://www.google.com/search?q={query}&tbm=isch"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -20,21 +21,15 @@ def search_google_images(query, num_images=10):
 
     try:
         response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # 画像URLを抽出
         img_tags = soup.find_all('img')
-        img_urls = []
+        img_urls = [img.get('src') for img in img_tags if img.get('src') and img.get('src').startswith('http')]
 
-        for img in img_tags:
-            src = img.get('src')
-            if src and src.startswith('http'):
-                img_urls.append(src)
-                if len(img_urls) >= num_images:
-                    break
-
-        return img_urls
-    except Exception as e:
+        return img_urls[:num_images]
+    except requests.exceptions.RequestException as e:
         st.error(f"画像検索でエラーが発生しました: {e}")
         return []
 
