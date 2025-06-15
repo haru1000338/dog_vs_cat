@@ -17,28 +17,73 @@ if not os.path.exists(keep_dir):
     os.makedirs(keep_dir, exist_ok=True)
 
 def search_google_images(query, num_images=10):
-    """Google画像検索の結果を取得する"""
-    search_url = f"https://www.google.com/search?q={query}&tbm=isch"
+    """Google画像検索の結果を取得する（改善版）"""
+    search_url = f"https://www.google.com/search?q={query}&tbm=isch&safe=off"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
     }
 
     try:
-        response = requests.get(search_url, headers=headers)
+        response = requests.get(search_url, headers=headers, timeout=10)
+        response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # 画像URLを抽出
-        img_tags = soup.find_all('img')
+        # デバッグ情報を表示
+        st.write(f"検索URL: {search_url}")
+        st.write(f"レスポンスステータス: {response.status_code}")
+
+        # 複数の方法で画像URLを探索
         img_urls = []
+
+        # 方法1: imgタグのsrc属性から
+        img_tags = soup.find_all('img')
+        st.write(f"見つかったimgタグ数: {len(img_tags)}")
 
         for img in img_tags:
             src = img.get('src')
-            if src and src.startswith('http'):
-                img_urls.append(src)
-                if len(img_urls) >= num_images:
-                    break
+            data_src = img.get('data-src')
 
-        return img_urls
+            # srcまたはdata-srcから有効なURLを取得
+            for url in [src, data_src]:
+                if url and (url.startswith('http') or url.startswith('data:image')):
+                    # data:image URLは除外（Base64エンコードされた画像）
+                    if not url.startswith('data:image') and url not in img_urls:
+                        img_urls.append(url)
+                        if len(img_urls) >= num_images:
+                            break
+
+            if len(img_urls) >= num_images:
+                break
+
+        # 方法2: より具体的なセレクタを使用
+        if len(img_urls) < 3:
+            specific_imgs = soup.select('img[src*="http"]')
+            for img in specific_imgs:
+                src = img.get('src')
+                if src and src not in img_urls and not src.startswith('data:image'):
+                    img_urls.append(src)
+                    if len(img_urls) >= num_images:
+                        break
+
+        # フィルタリング: 小さすぎる画像やアイコンを除外
+        filtered_urls = []
+        for url in img_urls:
+            # Googleのロゴやアイコンを除外
+            if not any(skip in url.lower() for skip in ['logo', 'icon', 'button', 'avatar', 'gstatic']):
+                filtered_urls.append(url)
+
+        st.write(f"フィルタリング後の画像数: {len(filtered_urls)}")
+
+        return filtered_urls[:num_images]
+
+    except requests.RequestException as e:
+        st.error(f"ネットワークエラー: {e}")
+        return []
     except Exception as e:
         st.error(f"画像検索でエラーが発生しました: {e}")
         return []
@@ -47,18 +92,65 @@ def download_image(url, filename):
     """URLから画像をダウンロードして指定したパスに保存"""
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.google.com/',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
         }
-        response = requests.get(url, headers=headers, timeout=10)
+
+        # URLの妥当性をチェック
+        if not url or not url.startswith('http'):
+            st.error(f"無効なURL: {url}")
+            return False
+
+        response = requests.get(url, headers=headers, timeout=15, stream=True)
         response.raise_for_status()
+
+        # コンテンツタイプをチェック
+        content_type = response.headers.get('content-type', '')
+        if not content_type.startswith('image/'):
+            st.error(f"画像ファイルではありません: {content_type}")
+            return False
 
         # 画像をkeepディレクトリに保存
         with open(filename, 'wb') as f:
-            f.write(response.content)
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        # ファイルサイズをチェック
+        file_size = os.path.getsize(filename)
+        if file_size < 1024:  # 1KB未満は無効とみなす
+            st.error("ダウンロードされたファイルが小さすぎます")
+            os.remove(filename)
+            return False
+
         return True
+    except requests.exceptions.Timeout:
+        st.error("タイムアウト: 画像のダウンロードに時間がかかりすぎています")
+        return False
+    except requests.exceptions.RequestException as e:
+        st.error(f"ネットワークエラー: {e}")
+        return False
     except Exception as e:
         st.error(f"画像のダウンロードに失敗しました: {e}")
         return False
+
+def get_sample_images():
+    """サンプル画像のURLリストを返す"""
+    sample_images = [
+        # 犬の画像
+        "https://images.unsplash.com/photo-1552053831-71594a27632d?w=400&h=400&fit=crop",
+        "https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=400&h=400&fit=crop",
+        "https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=400&h=400&fit=crop",
+        # 猫の画像
+        "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400&h=400&fit=crop",
+        "https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=400&h=400&fit=crop",
+        "https://images.unsplash.com/photo-1592194996308-7b43878e84a6?w=400&h=400&fit=crop",
+        # 混合
+        "https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400&h=400&fit=crop",
+        "https://images.unsplash.com/photo-1415369629372-26f2fe60c467?w=400&h=400&fit=crop",
+    ]
+    return sample_images
 
 # セッションステートの初期化
 if "result" not in st.session_state:
@@ -81,9 +173,45 @@ if st.button("画像を検索", key="search_button"):
             st.success(f"{len(img_urls)}枚の画像が見つかりました！")
             st.session_state.img_urls = img_urls
         else:
-            st.warning("画像が見つかりませんでした。別のキーワードで試してください。")
+            st.warning("Google検索で画像が見つかりませんでした。サンプル画像を使用してみてください。")
     else:
         st.warning("検索キーワードを入力してください。")
+
+# サンプル画像ボタンを追加
+col1, col2 = st.columns(2)
+with col2:
+    if st.button("📸 サンプル画像を使用", key="sample_button"):
+        st.session_state.img_urls = get_sample_images()
+        st.success(f"{len(st.session_state.img_urls)}枚のサンプル画像を読み込みました！")
+
+# サンプル画像セクション
+st.markdown("### 🌟 サンプル画像")
+sample_images = get_sample_images()
+st.write("犬と猫のサンプル画像を表示します。クリックで選択できます。")
+
+# 画像を3列で表示
+cols = st.columns(3)
+for i, url in enumerate(sample_images):
+    col = cols[i % 3]
+    with col:
+        try:
+            st.image(url, width=200)
+            if st.button(f"この画像を選択", key=f"sample_select_{i}"):
+                # 選択された画像をダウンロード
+                img_filename = f"sample_image_{i}.jpg"
+                img_path = os.path.join(keep_dir, img_filename)
+
+                with st.spinner("画像をダウンロード中..."):
+                    if download_image(url, img_path):
+                        st.session_state.selected_image_url = url
+                        st.session_state.selected_image_path = img_path
+                        st.session_state.result = None
+                        st.session_state.prob = None
+                        st.session_state.predicted = False
+                        st.success("✅ 画像が選択されました！")
+                        st.rerun()
+        except Exception as e:
+            st.error(f"画像の処理でエラーが発生しました: {e}")
 
 # 検索結果の表示
 if hasattr(st.session_state, 'img_urls') and st.session_state.img_urls:
@@ -183,7 +311,10 @@ st.markdown("---")
 st.markdown("### 📝 使用方法")
 st.markdown("""
 1. **🔍 Google画像検索**: 検索キーワードを入力して「画像を検索」をクリック
-2. **📸 画像選択**: 検索結果から分類したい画像を選択
+   - Google検索で画像が見つからない場合は「📸 サンプル画像を使用」をお試しください
+2. **📸 画像選択**: 検索結果またはサンプル画像から分類したい画像を選択
 3. **🤖 予測実行**: 「予測する」ボタンをクリックして分類開始
 4. **🔍 結果確認**: 「結果を見る」ボタンで犬か猫かの判定結果を表示
+
+**注意**: Google検索が制限される場合があります。その際はサンプル画像をご利用ください。
 """)
