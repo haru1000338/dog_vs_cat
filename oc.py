@@ -7,6 +7,7 @@ import shutil
 import requests
 from bs4 import BeautifulSoup
 import tempfile
+import json
 
 st.set_page_config(page_title="犬猫分類AI", layout="centered")
 st.write('# AIで画像を分類しよう！')
@@ -16,25 +17,48 @@ keep_dir = os.path.join(os.path.dirname(__file__), "keep")
 if not os.path.exists(keep_dir):
     os.makedirs(keep_dir, exist_ok=True)
 
+# 保存された画像URLを管理するファイル
+saved_urls_file = os.path.join(keep_dir, "saved_image_urls.txt")
+
+# 画像URLを保存する関数
+def save_image_urls(urls):
+    with open(saved_urls_file, "w") as f:
+        for url in urls:
+            f.write(url + "\n")
+
+# 保存された画像URLを読み込む関数
+def load_image_urls():
+    if os.path.exists(saved_urls_file):
+        with open(saved_urls_file, "r") as f:
+            return [line.strip() for line in f.readlines()]
+    return []
+
+# デバッグ用に画像検索結果をログ出力
 def search_google_images(query, num_images=10):
-    """Google画像検索の結果をスクレイピングで取得する（簡略化版）"""
-    search_url = f"https://www.google.com/search?q={query}&tbm=isch"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+    """Google Custom Search JSON APIを使用して画像検索を行う"""
+    api_key = "YOUR_GOOGLE_API_KEY"  # Google APIキーを設定
+    cse_id = "YOUR_CUSTOM_SEARCH_ENGINE_ID"  # カスタム検索エンジンIDを設定
+
+    search_url = f"https://www.googleapis.com/customsearch/v1?q={query}&cx={cse_id}&searchType=image&num={num_images}&key={api_key}"
 
     try:
-        response = requests.get(search_url, headers=headers)
+        response = requests.get(search_url)
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
+        results = response.json()
 
         # 画像URLを抽出
-        img_tags = soup.find_all('img')
-        img_urls = [img.get('src') for img in img_tags if img.get('src') and img.get('src').startswith('http')]
+        img_urls = [item['link'] for item in results.get('items', [])]
 
-        return img_urls[:num_images]
+        # デバッグ: 検索結果をログに出力
+        st.write(f"検索クエリ: {query}")
+        st.write(f"取得した画像URL: {img_urls}")
+
+        return img_urls
     except requests.exceptions.RequestException as e:
         st.error(f"画像検索でエラーが発生しました: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        st.error(f"APIレスポンスの解析に失敗しました: {e}")
         return []
 
 def download_image(url, filename):
@@ -328,3 +352,25 @@ if st.button("画像を検索"):
 
             # 一時ディレクトリを削除
             shutil.rmtree(temp_dir)
+
+# 保存された画像URLを選択セクション
+st.markdown("### 📂 保存された画像を選択")
+saved_urls = load_image_urls()
+if saved_urls:
+    selected_saved_url = st.selectbox("保存された画像を選択してください", saved_urls)
+    if selected_saved_url:
+        st.image(selected_saved_url, caption="選択された保存画像", use_column_width=True)
+
+        # 推論を実行
+        if st.button("保存画像で推論を実行"):
+            img_filename = "selected_saved_image.jpg"
+            img_path = os.path.join(keep_dir, img_filename)
+
+            with st.spinner("画像をダウンロード中..."):
+                if download_image(selected_saved_url, img_path):
+                    result, prob = predict.main(img_path)
+                    st.write(f"推論結果: {result} (確率: {prob * 100:.1f}%)")
+                else:
+                    st.error("画像のダウンロードに失敗しました。")
+else:
+    st.info("保存された画像がありません。")
