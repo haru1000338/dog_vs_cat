@@ -55,6 +55,13 @@ def download_image(url):
         st.error(f"画像のダウンロードに失敗しました: {e}")
         return None
 
+# サンプル画像のパス
+sample_images = [
+    "results/sample1.jpg",
+    "results/sample2.jpg",
+    "results/sample3.jpg"
+]
+
 # Streamlitアプリのメイン部分
 st.title("🐱🐶 犬・猫画像分類アプリ")
 st.write("Google画像検索で画像を選択して、犬か猫かを分類します！")
@@ -69,48 +76,51 @@ if st.button("画像を検索"):
 
         if img_urls:
             st.success(f"{len(img_urls)}枚の画像が見つかりました！")
-
-            # 画像を表示（3列のレイアウト）
-            cols = st.columns(3)
-            for i, url in enumerate(img_urls):
-                col = cols[i % 3]
-                with col:
-                    try:
-                        # 画像を表示
-                        st.image(url, width=200)
-
-                        # 分類ボタン
-                        if st.button(f"分類する", key=f"classify_{i}"):
-                            with st.spinner("分類中..."):
-                                # 画像をダウンロード
-                                temp_file = download_image(url)
-
-                                if temp_file:
-                                    try:
-                                        # 分類を実行
-                                        prediction, probability = predict_image(temp_file)
-
-                                        if prediction and probability:
-                                            # 結果を表示
-                                            st.success(f"予測結果: **{prediction}**")
-                                            st.info(f"確率: {probability:.4f}")
-
-                                            # 分類された画像を再表示
-                                            st.image(url, caption=f"予測: {prediction} (確率: {probability:.4f})", width=300)
-                                        else:
-                                            st.error("分類に失敗しました")
-
-                                    finally:
-                                        # 一時ファイルを削除
-                                        if os.path.exists(temp_file):
-                                            os.unlink(temp_file)
-                                else:
-                                    st.error("画像のダウンロードに失敗しました")
-
-                    except Exception as e:
-                        st.error(f"画像の処理でエラーが発生しました: {e}")
         else:
-            st.warning("画像が見つかりませんでした。別のキーワードで試してください。")
+            st.warning("画像が見つかりませんでした。サンプル画像を表示します。")
+            img_urls = sample_images
+
+        # 画像を表示（3列のレイアウト）
+        cols = st.columns(3)
+        for i, url in enumerate(img_urls):
+            col = cols[i % 3]
+            with col:
+                try:
+                    # サンプル画像か検索結果かで処理を分ける
+                    if url.startswith("http"):
+                        st.image(url, width=200)
+                        temp_file = download_image(url)
+                    else:
+                        st.image(url, width=200)
+                        temp_file = url
+
+                    # 分類ボタン
+                    if st.button(f"分類する", key=f"classify_{i}"):
+                        with st.spinner("分類中..."):
+                            if temp_file:
+                                try:
+                                    # 分類を実行
+                                    prediction, probability = predict_image(temp_file)
+
+                                    if prediction and probability:
+                                        # 結果を表示
+                                        st.success(f"予測結果: **{prediction}**")
+                                        st.info(f"確率: {probability:.4f}")
+
+                                        # 分類された画像を再表示
+                                        st.image(url, caption=f"予測: {prediction} (確率: {probability:.4f})", width=300)
+                                    else:
+                                        st.error("分類に失敗しました")
+
+                                finally:
+                                    # 一時ファイルを削除
+                                    if url.startswith("http") and os.path.exists(temp_file):
+                                        os.unlink(temp_file)
+                            else:
+                                st.error("画像のダウンロードに失敗しました")
+
+                except Exception as e:
+                    st.error(f"画像の処理でエラーが発生しました: {e}")
     else:
         st.warning("検索キーワードを入力してください。")
 
