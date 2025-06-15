@@ -36,8 +36,8 @@ def load_image_urls():
 # デバッグ用に画像検索結果をログ出力
 def search_google_images(query, num_images=10):
     """Google Custom Search JSON APIを使用して画像検索を行う"""
-    api_key = "YOUR_GOOGLE_API_KEY"  # Google APIキーを設定
-    cse_id = "YOUR_CUSTOM_SEARCH_ENGINE_ID"  # カスタム検索エンジンIDを設定
+    api_key = "AIzaSyCZAhEWz6VwIfjLSIrSPdEnxQh4L1rwMkw"  # Google APIキーを設定
+    cse_id = "f161d859b216d43e1"  # カスタム検索エンジンIDを設定
 
     search_url = f"https://www.googleapis.com/customsearch/v1?q={query}&cx={cse_id}&searchType=image&num={num_images}&key={api_key}"
 
